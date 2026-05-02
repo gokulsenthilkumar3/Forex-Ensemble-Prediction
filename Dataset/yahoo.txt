@@ -1,0 +1,84 @@
+pip install yfinance pandas
+
+import yfinance as yf
+import pandas as pd
+import os
+
+os.makedirs('output', exist_ok=True)
+
+forex_pairs = [
+    'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'USDCAD=X',
+    'USDCHF=X', 'NZDUSD=X', 'USDINR=X', 'USDCNY=X', 'USDSGD=X',
+    'USDHKD=X', 'USDKRW=X', 'USDBRL=X', 'USDMXN=X', 'USDTRY=X',
+    'USDZAR=X', 'USDNOK=X', 'USDSEK=X', 'USDDKK=X', 'USDPLN=X',
+    'USDCZK=X', 'USDHUF=X', 'EURJPY=X', 'EURGBP=X', 'GBPJPY=X',
+    'AUDJPY=X', 'CADJPY=X', 'CHFJPY=X', 'EURAUD=X', 'EURCAD=X'
+]
+
+commodities = [
+    'GC=F',   # Gold
+    'SI=F',   # Silver
+    'PL=F',   # Platinum
+    'HG=F',   # Copper
+    'CL=F',   # WTI Crude Oil
+    'BZ=F',   # Brent Crude
+    'NG=F',   # Natural Gas
+    'ZC=F',   # Corn
+    'ZS=F',   # Soybeans
+    'ZW=F',   # Wheat
+    'KC=F',   # Coffee
+    'SB=F',   # Sugar
+    'CC=F',   # Cocoa
+    'CT=F',   # Cotton
+    'LE=F',   # Live Cattle
+    'HE=F',   # Lean Hogs
+    'PA=F',   # Palladium
+    'RB=F',   # RBOB Gasoline
+    'HO=F',   # Heating Oil
+]
+
+ticker_labels = {
+    'EURUSD=X':'EUR_USD','GBPUSD=X':'GBP_USD','USDJPY=X':'USD_JPY','AUDUSD=X':'AUD_USD',
+    'USDCAD=X':'USD_CAD','USDCHF=X':'USD_CHF','NZDUSD=X':'NZD_USD','USDINR=X':'USD_INR',
+    'USDCNY=X':'USD_CNY','USDSGD=X':'USD_SGD','USDHKD=X':'USD_HKD','USDKRW=X':'USD_KRW',
+    'USDBRL=X':'USD_BRL','USDMXN=X':'USD_MXN','USDTRY=X':'USD_TRY','USDZAR=X':'USD_ZAR',
+    'USDNOK=X':'USD_NOK','USDSEK=X':'USD_SEK','USDDKK=X':'USD_DKK','USDPLN=X':'USD_PLN',
+    'USDCZK=X':'USD_CZK','USDHUF=X':'USD_HUF','EURJPY=X':'EUR_JPY','EURGBP=X':'EUR_GBP',
+    'GBPJPY=X':'GBP_JPY','AUDJPY=X':'AUD_JPY','CADJPY=X':'CAD_JPY','CHFJPY=X':'CHF_JPY',
+    'EURAUD=X':'EUR_AUD','EURCAD=X':'EUR_CAD',
+    'GC=F':'Gold','SI=F':'Silver','PL=F':'Platinum','HG=F':'Copper',
+    'CL=F':'WTI_Crude','BZ=F':'Brent_Crude','NG=F':'Natural_Gas',
+    'ZC=F':'Corn','ZS=F':'Soybeans','ZW=F':'Wheat',
+    'KC=F':'Coffee','SB=F':'Sugar','CC=F':'Cocoa','CT=F':'Cotton',
+    'LE=F':'Live_Cattle','HE=F':'Lean_Hogs','PA=F':'Palladium',
+    'RB=F':'RBOB_Gasoline','HO=F':'Heating_Oil'
+}
+
+all_tickers = forex_pairs + commodities
+all_dfs = []
+
+for ticker in all_tickers:
+    try:
+        df = yf.download(ticker, start='2015-01-01', end='2026-05-01',
+                         interval='1d', auto_adjust=True, progress=False)
+        df = df[['Open','High','Low','Close','Volume']].copy()
+        label = ticker_labels.get(ticker, ticker)
+        df.columns = [f'{label}_{c}' for c in df.columns]
+        all_dfs.append(df)
+        print(f"✓ {label}")
+    except Exception as e:
+        print(f"✗ {ticker}: {e}")
+
+combined = pd.concat(all_dfs, axis=1)
+combined.index.name = 'Date'
+combined.sort_index(inplace=True)
+
+# Save full OHLCV version
+combined.to_csv('output/forex_commodities_full_ohlcv.csv')
+
+# Save close-only version (lighter for ML)
+close_cols = [c for c in combined.columns if c.endswith('_Close')]
+combined[close_cols].to_csv('output/forex_commodities_close_only.csv')
+
+print(f"\n✅ Saved! Shape: {combined.shape}")
+print(f"Columns: {len(combined.columns)} | Rows: {len(combined)}")
