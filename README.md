@@ -44,17 +44,20 @@ graph TD
 ## 🛠️ Setup & Installation
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/yourusername/forex-prediction.git
    cd forex-prediction
    ```
 
 2. **Install dependencies**:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 3. **Run the training pipeline**:
+
    ```bash
    python forex_prediction.py
    ```
@@ -62,6 +65,7 @@ graph TD
 ## 📊 Results Visualization
 
 The system generates comprehensive plots in the `outputs/` directory:
+
 - **Actual vs Predicted**: Per-model comparison.
 - **Loss Curves**: Training/Validation monitoring.
 - **SHAP Importance**: Understanding what drives the predictions.
