@@ -1,40 +1,48 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
+*.pyo
+*.pyd
 *.egg
+*.egg-info/
+dist/
+build/
+.eggs/
 
-# Data & Models
-Forex_Data.csv
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Outputs & artifacts (large files — do not commit)
 outputs/
-*.keras
 *.pkl
+*.keras
 *.h5
+
+# Scratch work — never commit
+scratch/
+
+# Logs
 *.log
+training.log
+
+# OS
+.DS_Store
+Thumbs.db
 
 # IDEs
 .vscode/
 .idea/
-.DS_Store
+*.swp
 
-# Environments
-.env
-venv/
-.venv/
+# Data (large CSVs — manage with DVC or Git LFS)
+# Uncomment if you use DVC:
+# Forex_Data.csv
+
+# Optuna study DB
+*.db

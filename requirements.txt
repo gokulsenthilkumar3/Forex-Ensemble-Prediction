@@ -10,3 +10,5 @@ joblib
 tqdm
 optuna
 shap
+pyyaml
+pytest
