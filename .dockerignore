@@ -1,0 +1,49 @@
+# Git
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Outputs & large artifacts
+outputs/
+*.pkl
+*.keras
+*.h5
+
+# Scratch
+scratch/
+
+# Logs
+*.log
+
+# Notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# MLflow local runs
+mlruns/
+
+# CI
+.github/
+
+# Docs
+*.docx
+*.pdf
+*.pptx
