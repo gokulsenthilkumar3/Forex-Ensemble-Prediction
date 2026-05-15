@@ -1,0 +1,61 @@
+# Feature Engineering Configuration
+# Toggle individual feature groups on/off
+
+moving_averages:
+  enabled: true
+  sma_windows: [5, 10, 20, 50]
+  ema_windows: [5, 12, 26]
+
+macd:
+  enabled: true
+  fast: 12
+  slow: 26
+  signal: 9
+
+rsi:
+  enabled: true
+  period: 14
+
+stoch_rsi:
+  enabled: true
+  period: 14
+
+williams_r:
+  enabled: true
+  period: 14
+
+bollinger_bands:
+  enabled: true
+  window: 20
+  std_dev: 2
+
+# Only computed when high/low/close columns exist in the dataset
+atr:
+  enabled: false
+
+# Only computed when volume column exists in the dataset
+obv:
+  enabled: false
+
+returns_volatility:
+  enabled: true
+  vol_windows: [5, 20]
+
+lags:
+  enabled: true
+  periods: [1, 2, 3, 5, 10]
+  fill_method: ffill   # ffill prevents future data leakage (not bfill)
+
+calendar:
+  enabled: true
+  features: [day_of_week, month, quarter, is_month_end]
+
+cross_currency:
+  enabled: true
+  base_currency: "USD"        # reference pair for correlation
+  corr_window: 30             # rolling correlation window (days)
+  index_currencies: []        # list of currency_codes to build a synthetic index; empty = auto-detect top 5 by count
+
+target:
+  mode: raw_rate              # options: raw_rate | log_return | pct_change | n_step_ahead
+  n_steps_ahead: 1            # used only when mode = n_step_ahead
