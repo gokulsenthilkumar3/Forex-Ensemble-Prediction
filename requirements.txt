@@ -8,4 +8,5 @@ lightgbm
 tensorflow
 joblib
 tqdm
+optuna
 shap
