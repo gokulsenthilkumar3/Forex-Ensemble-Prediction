@@ -3,28 +3,19 @@ src/api/app.py
 ===============
 FastAPI application for online Forex exchange-rate inference.
 
+Fixed bugs (see review comment on PR #7):
+  - Bug 2: Currency code reconstruction now reads '_currency_code_orig' from
+           df_proc (set by predictor._preprocess) instead of using idxmax()
+           on OHE columns, which was wrong for the drop_first=True dropped currency.
+  - Bug 5: `predictor` global is now typed Optional[ForexPredictor] and
+           _require_artifacts() guards against None explicitly.
+
 Endpoints
 ---------
-GET  /health          — liveness + artifact status check
-GET  /model-info      — metadata about the loaded model artifacts
-POST /predict         — single or multi-row online inference (JSON)
-POST /predict/batch   — CSV file upload for batch inference
-
-Design decisions
-----------------
-- ForexPredictor is a singleton loaded once at startup via lifespan.
-- All request validation is handled by Pydantic schemas (schemas.py).
-- Async route handlers keep the event loop free during preprocessing.
-- CSV batch endpoint uses UploadFile + background streaming to avoid
-  loading large files entirely into RAM.
-- CORS is enabled for all origins by default (restrict in production).
-- All errors return RFC 7807-style JSON with 'detail' and 'type' fields.
-
-Usage
------
-    uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
-    # or via Docker:
-    docker run -p 8000:8000 forex-prediction-api
+GET  /health          — liveness + artifact status
+GET  /model-info      — artifact metadata
+POST /predict         — online JSON inference
+POST /predict/batch   — CSV file upload → CSV download
 """
 
 from __future__ import annotations
@@ -32,7 +23,7 @@ import io
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -55,42 +46,31 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 
-# ── Configuration from environment ────────────────────────────────────────────
 _MODEL_DIR   = os.environ.get("MODEL_DIR",   "outputs/latest")
 _CONFIG_PATH = os.environ.get("FEAT_CONFIG", "config/features.yaml")
 _API_TITLE   = "Forex Ensemble Prediction API"
 _API_VERSION = "1.0.0"
 
-# ── Predictor singleton (populated at startup) ─────────────────────────────────
-predictor: ForexPredictor = None
+# FIX Bug 5: typed as Optional so type-checkers and _require_artifacts() handle None safely.
+predictor: Optional[ForexPredictor] = None
 
-
-# ── Lifespan: load artifacts once on startup ───────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global predictor
     log.info(f"Starting {_API_TITLE} v{_API_VERSION}")
-    log.info(f"Model directory : {_MODEL_DIR}")
-    log.info(f"Feature config  : {_CONFIG_PATH}")
-
-    predictor = ForexPredictor(
-        model_dir=_MODEL_DIR,
-        config_path=_CONFIG_PATH,
-    )
+    predictor = ForexPredictor(model_dir=_MODEL_DIR, config_path=_CONFIG_PATH)
     try:
         predictor.load_artifacts()
         log.info("All artifacts loaded successfully.")
     except FileNotFoundError as exc:
         log.warning(
             f"Artifact loading failed: {exc}. "
-            "Server will start in degraded mode — train a model first."
+            "Server starting in degraded mode — run training first."
         )
     yield
     log.info("Shutting down API server.")
 
-
-# ── App instance ───────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title=_API_TITLE,
@@ -107,7 +87,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      # Restrict in production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -117,10 +97,6 @@ app.add_middleware(
 
 @app.get("/health", response_model=HealthResponse, tags=["Ops"])
 async def health():
-    """
-    Liveness + readiness check.
-    Returns artifact load status and available model names.
-    """
     return HealthResponse(
         status="ok" if (predictor and predictor.artifacts_loaded) else "degraded",
         model_dir=_MODEL_DIR,
@@ -131,13 +107,8 @@ async def health():
 
 @app.get("/model-info", response_model=ModelInfoResponse, tags=["Ops"])
 async def model_info(
-    model: str = Query(default="stacking",
-                       description="Model name: lgb | xgb | stacking"),
+    model: str = Query(default="stacking", description="lgb | xgb | stacking"),
 ):
-    """
-    Returns metadata about the loaded model artifacts:
-    artifact files present, number of known currencies, config path.
-    """
     _require_artifacts()
     if model not in predictor.available_models:
         raise HTTPException(
@@ -156,20 +127,7 @@ async def model_info(
 @app.post("/predict", response_model=PredictResponse, tags=["Inference"])
 async def predict(request: PredictRequest):
     """
-    **Online inference** — accepts 1..N rows as JSON, returns predicted
-    exchange rates in the same order.
-
-    Request body example:
-    ```json
-    {
-      "rows": [
-        {"date": "2025-01-10", "currency_code": "USD", "exchange_rate": 83.10},
-        {"date": "2025-01-11", "currency_code": "EUR", "exchange_rate": 90.45}
-      ],
-      "model": "stacking",
-      "return_uncertainty": false
-    }
-    ```
+    Online inference — 1..N rows as JSON, predictions returned in the same order.
     """
     _require_artifacts()
     try:
@@ -184,24 +142,16 @@ async def predict(request: PredictRequest):
         log.exception("Prediction failed")
         raise HTTPException(status_code=500, detail=f"Inference error: {exc}")
 
-    # Reconstruct currency codes from one-hot columns
-    cc_cols = [c for c in df_proc.columns if c.startswith("currency_code_")]
-    if cc_cols:
-        currency_codes = (
-            df_proc[cc_cols]
-            .idxmax(axis=1)
-            .str.replace("currency_code_", "", regex=False)
-        )
-    else:
-        currency_codes = pd.Series(["unknown"] * len(df_proc))
-
     rows_out: List[PredictionRow] = []
     for i, (_, row) in enumerate(df_proc.iterrows()):
         if i >= len(preds):
             break
+        # FIX Bug 2: Read from '_currency_code_orig' which is always populated,
+        # even for the currency that get_dummies(drop_first=True) dropped.
+        cc = str(row.get("_currency_code_orig", "unknown"))
         rows_out.append(PredictionRow(
             date=str(row.get("date", ""))[:10],
-            currency_code=str(currency_codes.iloc[i]),
+            currency_code=cc,
             predicted_rate=float(round(preds[i], 6)),
             uncertainty=(
                 float(round(uncertainties[i], 6))
@@ -218,26 +168,18 @@ async def predict(request: PredictRequest):
 
 @app.post("/predict/batch", tags=["Inference"])
 async def predict_batch(
-    file: UploadFile = File(..., description="CSV file with columns: date, currency_code [, exchange_rate]"),
+    file: UploadFile = File(..., description="CSV with columns: date, currency_code [, exchange_rate]"),
     model: str       = Query(default="stacking", description="lgb | xgb | stacking"),
     return_uncertainty: bool = Query(default=False),
 ):
     """
-    **Batch CSV inference** — upload a CSV file, get predictions back
-    as a downloadable CSV.
-
-    Expected CSV columns: `date`, `currency_code` (and optionally `exchange_rate`).
-
-    Returns a CSV file stream with an added `predicted_rate` column
-    (and `uncertainty` column when `return_uncertainty=True`).
+    Batch CSV inference — upload a CSV, get predictions back as a downloadable CSV.
+    Output CSV preserves the same row order as the input file.
     """
     _require_artifacts()
 
     if not file.filename.endswith(".csv"):
-        raise HTTPException(
-            status_code=415,
-            detail="Only CSV files are accepted for batch inference.",
-        )
+        raise HTTPException(status_code=415, detail="Only CSV files are accepted.")
 
     content = await file.read()
     try:
@@ -264,7 +206,12 @@ async def predict_batch(
         log.exception("Batch prediction failed")
         raise HTTPException(status_code=500, detail=f"Inference error: {exc}")
 
-    out_df = df_proc[["date"]].copy()
+    # Sort output by _orig_idx to restore input CSV row order
+    df_proc = df_proc.sort_values("_orig_idx").reset_index(drop=True)
+
+    out_df = df_proc[["date", "_currency_code_orig"]].rename(
+        columns={"_currency_code_orig": "currency_code"}
+    )
     if "exchange_rate" in df_proc.columns:
         out_df["exchange_rate"] = df_proc["exchange_rate"]
     out_df["predicted_rate"] = preds
@@ -287,8 +234,8 @@ async def predict_batch(
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
 def _require_artifacts() -> None:
-    """Raise 503 if artifacts aren't loaded yet."""
-    if not predictor or not predictor.artifacts_loaded:
+    """FIX Bug 5: Guard against both None predictor and unloaded artifacts."""
+    if predictor is None or not predictor.artifacts_loaded:
         raise HTTPException(
             status_code=503,
             detail="Model artifacts not loaded. Run training pipeline first.",
