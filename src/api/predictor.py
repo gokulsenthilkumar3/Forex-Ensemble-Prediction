@@ -11,6 +11,8 @@ Fixed bugs (see review comment on PR #7):
            including the currency that get_dummies(drop_first=True) removes.
   - Bug 3: Keras DL models are now loaded ONCE in load_artifacts() and cached
            in self._dl_models; _mc_uncertainty() reads from the cache, not disk.
+  - Bug 6: _mc_uncertainty() now forwards batch_size to mc_predict() so the
+           parameter is actually used (was always silently defaulting to 256).
   - Minor: remove_outliers_iqr is skipped during inference to prevent silent
            row drops; a warning is logged instead.
 """
@@ -261,11 +263,17 @@ class ForexPredictor:
     # ── MC-Dropout uncertainty (uses cached DL models) ──────────────────────────
 
     def _mc_uncertainty(
-        self, X_flat: np.ndarray, n_samples: int = 30
+        self,
+        X_flat: np.ndarray,
+        n_samples: int = 30,
+        batch_size: int = 256,
     ) -> np.ndarray:
         """
         FIX Bug 3: Uses self._dl_models (loaded once at startup) instead of
         reloading Keras models from disk on every request.
+
+        FIX Bug 6: batch_size is now forwarded to mc_predict() so large inputs
+        are processed in chunks rather than being sent as one giant batch.
 
         Returns aggregated std across DL models, or zeros if none loaded.
         """
@@ -286,7 +294,10 @@ class ForexPredictor:
                          for i in range(len(X_flat) - timesteps)],
                         axis=0,
                     )
-                    _, std = mc_predict(m, X_seq, n_samples=n_samples)
+                    # FIX Bug 6: pass batch_size so mc_predict chunks forward passes.
+                    _, std = mc_predict(
+                        m, X_seq, n_samples=n_samples, batch_size=batch_size
+                    )
                     padded = np.concatenate([np.zeros(timesteps), std])
                     all_stds.append(padded[: len(X_flat)])
                 except Exception as e:
