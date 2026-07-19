@@ -35,8 +35,13 @@ from src.data.cleaner        import remove_outliers_iqr
 from src.features.engineer   import add_features, load_config
 from src.features.cross_currency import add_cross_currency_features
 from src.features.shap_ranking   import compute_shap_ranking
-from src.models.tree_models  import build_xgboost, build_lightgbm, train_xgboost, train_lightgbm, save_model
+from src.models.tree_models  import (
+    build_xgboost, build_lightgbm, build_catboost,
+    build_xgboost_tuned, build_lightgbm_tuned, build_catboost_tuned,
+    train_xgboost, train_lightgbm, train_catboost, save_model
+)
 from src.models.deep_learning import DL_BUILDERS, get_callbacks
+from src.models.ensemble import build_oof_meta_features, StackingEnsemble
 from src.evaluation.metrics  import compute_metrics
 from src.evaluation.visualize import plot_loss_curves, plot_metrics_heatmap, plot_actual_vs_predicted
 from src.utils.io            import make_sequences, save_results, save_scaler
@@ -66,6 +71,8 @@ def parse_args() -> argparse.Namespace:
                    help="Early stopping patience (epochs).")
     p.add_argument("--seed",       type=int, default=42,
                    help="Random seed for reproducibility.")
+    p.add_argument("--tune",       action="store_true",
+                   help="Use Optuna to tune tree models.")
     p.add_argument("--log-level",  default="INFO",
                    choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                    help="Logging verbosity level.")
@@ -185,10 +192,22 @@ def main() -> None:
 
     # ── 7. Tree Models ──────────────────────────────────────────────────────
     log.info("STEP 7: Training Tree Models")
-    xgb_model = train_xgboost(build_xgboost(), X_tr_flat, y_tr_flat, X_te_flat, y_te_flat)
-    lgb_model = train_lightgbm(build_lightgbm(), X_tr_flat, y_tr_flat, X_te_flat, y_te_flat)
+    if args.tune:
+        log.info("  Tuning XGBoost...")
+        xgb_model = build_xgboost_tuned(X_tr_flat, y_tr_flat, X_te_flat, y_te_flat, random_state=args.seed)
+        log.info("  Tuning LightGBM...")
+        lgb_model = build_lightgbm_tuned(X_tr_flat, y_tr_flat, X_te_flat, y_te_flat, random_state=args.seed)
+        log.info("  Tuning CatBoost...")
+        cat_model = build_catboost_tuned(X_tr_flat, y_tr_flat, X_te_flat, y_te_flat, random_state=args.seed)
+    else:
+        xgb_model = train_xgboost(build_xgboost(), X_tr_flat, y_tr_flat, X_te_flat, y_te_flat)
+        lgb_model = train_lightgbm(build_lightgbm(), X_tr_flat, y_tr_flat, X_te_flat, y_te_flat)
+        cat_model = train_catboost(build_catboost(), X_tr_flat, y_tr_flat, X_te_flat, y_te_flat)
+
     save_model(xgb_model, os.path.join(args.output, "xgb_model.pkl"))
     save_model(lgb_model, os.path.join(args.output, "lgb_model.pkl"))
+    if cat_model:
+        save_model(cat_model, os.path.join(args.output, "cat_model.pkl"))
 
     # ── 8. SHAP Ranking ────────────────────────────────────────────────────────
     log.info("STEP 8: SHAP Feature Ranking")
@@ -232,7 +251,11 @@ def main() -> None:
     n_seq     = len(y_te_seq)
     X_te_algn = X_te_flat[-n_seq:]
     y_te_algn = y_te_flat[-n_seq:]
-    for tname, tmodel in [("XGBoost", xgb_model), ("LightGBM", lgb_model)]:
+    tree_models = [("XGBoost", xgb_model), ("LightGBM", lgb_model)]
+    if cat_model:
+        tree_models.append(("CatBoost", cat_model))
+        
+    for tname, tmodel in tree_models:
         p_sc   = tmodel.predict(X_te_algn).astype(np.float32)
         y_pr   = inv(p_sc)
         y_tr   = inv(y_te_algn)
@@ -243,20 +266,55 @@ def main() -> None:
 
     # ── 11. Stacking Ensemble ──────────────────────────────────────────────────
     log.info("STEP 11: Stacking Ensemble")
-    meta_X = np.column_stack([
-        *[dl_preds[n] for n in DL_BUILDERS],
+    
+    def make_trainer(builder, trainer_fn):
+        return lambda X_tr, y_tr, X_val, y_val: trainer_fn(builder(), X_tr, y_tr, X_val, y_val)
+    
+    def make_dl_trainer(nm, builder_fn):
+        def _train(X_tr, y_tr, X_val, y_val):
+            m_dl = builder_fn(args.timesteps, n_feat)
+            m_dl.fit(X_tr, y_tr, epochs=args.epochs, batch_size=args.batch_size, 
+                      validation_data=(X_val, y_val), verbose=0,
+                      callbacks=get_callbacks(nm, args.output, args.patience))
+            return m_dl
+        return _train
+
+    base_trainers = {
+        "XGBoost": make_trainer(build_xgboost, train_xgboost),
+        "LightGBM": make_trainer(build_lightgbm, train_lightgbm),
+    }
+    if cat_model:
+        base_trainers["CatBoost"] = make_trainer(build_catboost, train_catboost)
+    for n_dl, builder_fn in DL_BUILDERS.items():
+        base_trainers[n_dl] = make_dl_trainer(n_dl, builder_fn)
+    
+    log.info("  Generating OOF predictions for Stacking...")
+    oof_preds, _, val_maes = build_oof_meta_features(
+        base_trainers=base_trainers,
+        X_flat=X_tr_flat, y_flat=y_tr_flat,
+        X_seq=X_tr_seq, y_seq=y_tr_seq,
+        n_splits=5,
+        seq_model_names=list(DL_BUILDERS.keys())
+    )
+    
+    ensemble = StackingEnsemble(meta_learner="weighted")
+    ensemble.fit(oof_preds, y_tr_flat, val_maes=val_maes)
+    save_model(ensemble, os.path.join(args.output, "stacking_meta.pkl"))
+    
+    test_preds = [
         xgb_model.predict(X_te_algn),
         lgb_model.predict(X_te_algn),
-    ])
-    meta_y = y_te_seq.flatten()
-    mid    = int(len(meta_X) * 0.5)
-    meta_lr = Ridge(alpha=1.0)
-    meta_lr.fit(meta_X[:mid], meta_y[:mid])
-    save_model(meta_lr, os.path.join(args.output, "stacking_meta.pkl"))
-    st_pred  = meta_lr.predict(meta_X[mid:])
-    m_stack  = compute_metrics(inv(meta_y[mid:]), inv(st_pred), "Stacking Ensemble")
+    ]
+    if cat_model:
+        test_preds.append(cat_model.predict(X_te_algn))
+    for n_dl in DL_BUILDERS:
+        test_preds.append(dl_preds[n_dl])
+    meta_X_test = np.column_stack(test_preds)
+    
+    st_pred  = ensemble.predict(meta_X_test)
+    m_stack  = compute_metrics(inv(y_te_seq.flatten()), inv(st_pred), "Stacking Ensemble")
     results.append(m_stack)
-    preds["Stacking Ensemble"] = (inv(st_pred), inv(meta_y[mid:]))
+    preds["Stacking Ensemble"] = (inv(st_pred), inv(y_te_seq.flatten()))
     log.info(f"  Stacking: MAE={m_stack['MAE']:.4f}  R²={m_stack['R2']:.4f}  DA={m_stack['DA']:.1f}%")
 
     # ── 12. Results & Visualizations ─────────────────────────────────────────────

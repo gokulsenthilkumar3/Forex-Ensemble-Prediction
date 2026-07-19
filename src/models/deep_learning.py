@@ -45,8 +45,16 @@ def get_callbacks(
         m_mul=0.9,
         alpha=1e-6,
     )
+    
+    def scheduler(epoch):
+        warmup_epochs = 3
+        if epoch < warmup_epochs:
+            return 1e-4 + (1e-3 - 1e-4) * (epoch / warmup_epochs)
+        else:
+            return float(cosine_decay(epoch - warmup_epochs))
+
     lr_scheduler = tf.keras.callbacks.LearningRateScheduler(
-        lambda epoch: float(cosine_decay(epoch)), verbose=0
+        scheduler, verbose=0
     )
     return [
         EarlyStopping("val_loss", patience=patience, restore_best_weights=True),
@@ -193,9 +201,9 @@ _OPT = lambda: AdamW(learning_rate=1e-3, weight_decay=1e-4)
 
 def build_gru(timesteps: int, n_features: int) -> Model:
     inp = Input(shape=(timesteps, n_features))
-    x   = GRU(128, return_sequences=True)(inp)
+    x   = GRU(128, return_sequences=True, recurrent_dropout=0.1)(inp)
     x   = Dropout(0.2)(x)
-    x   = GRU(64)(x)
+    x   = GRU(64, recurrent_dropout=0.1)(x)
     x   = Dropout(0.2)(x)
     x   = Dense(32, activation="relu")(x)
     m   = Model(inp, Dense(1)(x), name="GRU")
@@ -205,9 +213,9 @@ def build_gru(timesteps: int, n_features: int) -> Model:
 
 def build_lstm(timesteps: int, n_features: int) -> Model:
     inp = Input(shape=(timesteps, n_features))
-    x   = LSTM(128, return_sequences=True)(inp)
+    x   = LSTM(128, return_sequences=True, recurrent_dropout=0.1)(inp)
     x   = Dropout(0.2)(x)
-    x   = LSTM(64)(x)
+    x   = LSTM(64, recurrent_dropout=0.1)(x)
     x   = Dropout(0.2)(x)
     x   = Dense(32, activation="relu")(x)
     m   = Model(inp, Dense(1)(x), name="LSTM")
@@ -217,9 +225,9 @@ def build_lstm(timesteps: int, n_features: int) -> Model:
 
 def build_bilstm_attention(timesteps: int, n_features: int) -> Model:
     inp = Input(shape=(timesteps, n_features))
-    x   = Bidirectional(LSTM(64, return_sequences=True))(inp)
+    x   = Bidirectional(LSTM(64, return_sequences=True, recurrent_dropout=0.1))(inp)
     x   = Dropout(0.2)(x)
-    x   = Bidirectional(LSTM(32, return_sequences=True))(x)
+    x   = Bidirectional(LSTM(32, return_sequences=True, recurrent_dropout=0.1))(x)
     x   = Dropout(0.2)(x)
     ctx = AttentionPool(64)(x)
     x   = Dense(32, activation="relu")(ctx)

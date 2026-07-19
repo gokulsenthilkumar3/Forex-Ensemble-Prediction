@@ -76,7 +76,7 @@ def load_artifacts(model_dir: str, model_name: str) -> tuple:
     return scaler_y, per_currency_scalers, model
 
 
-def preprocess(df: pd.DataFrame, feat_cfg: dict, per_currency_scalers: dict) -> tuple:
+def preprocess(df: pd.DataFrame, feat_cfg: dict, per_currency_scalers: dict, model=None) -> tuple:
     """
     Apply the same feature engineering + per-currency scaling pipeline
     used during training to new inference data.
@@ -86,6 +86,7 @@ def preprocess(df: pd.DataFrame, feat_cfg: dict, per_currency_scalers: dict) -> 
     df                   : Raw loaded DataFrame.
     feat_cfg             : Loaded features.yaml config.
     per_currency_scalers : Dict of {currency_code: {scaler, cols}} from training.
+    model                : Optional trained model to align expected features.
 
     Returns
     -------
@@ -114,12 +115,32 @@ def preprocess(df: pd.DataFrame, feat_cfg: dict, per_currency_scalers: dict) -> 
         scaled_dfs.append(grp)
     df = pd.concat(scaled_dfs, ignore_index=True)
 
-    df = pd.get_dummies(df, columns=["currency_code"], drop_first=True)
+    # Proper dummy encoding preserving original column
+    dummies = pd.get_dummies(df["currency_code"], prefix="currency_code", drop_first=True)
+    df = pd.concat([df, dummies], axis=1)
+    
     bool_cols = df.select_dtypes("bool").columns
     if len(bool_cols):
         df[bool_cols] = df[bool_cols].astype(int)
 
-    feature_cols = [c for c in df.columns if c not in ("date", "exchange_rate", "target")]
+    # Align feature columns dynamically based on the model if provided
+    expected_features = None
+    if model is not None:
+        if hasattr(model, "feature_name_"):
+            expected_features = model.feature_name_
+        elif hasattr(model, "get_booster"):
+            expected_features = model.get_booster().feature_names
+        elif hasattr(model, "feature_names_in_"):
+            expected_features = list(model.feature_names_in_)
+
+    if expected_features:
+        for f in expected_features:
+            if f not in df.columns:
+                df[f] = 0.0
+        feature_cols = expected_features
+    else:
+        feature_cols = [c for c in df.select_dtypes(include=[np.number]).columns if c not in ["exchange_rate", "target"]]
+
     X = df[feature_cols].values.astype(np.float32)
     return X, feature_cols, df
 

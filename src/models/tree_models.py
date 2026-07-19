@@ -185,6 +185,57 @@ def build_lightgbm_tuned(
     return train_lightgbm(best_model, X_train, y_train, X_val, y_val)
 
 
+def build_catboost_tuned(
+    X_train: np.ndarray, y_train: np.ndarray,
+    X_val: np.ndarray,   y_val: np.ndarray,
+    n_trials: int = 50,
+    random_state: int = 42,
+):
+    """
+    Optuna-based hyperparameter search for CatBoost.
+
+    Returns fitted CatBoostRegressor with best found hyperparameters.
+    """
+    try:
+        from catboost import CatBoostRegressor
+    except ImportError:
+        log.warning("catboost not installed — skipping tuned CatBoost.")
+        return None
+    try:
+        import optuna
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+    except ImportError:
+        log.warning("optuna not installed — falling back to default CatBoost.")
+        m = build_catboost()
+        return train_catboost(m, X_train, y_train, X_val, y_val)
+
+    def objective(trial):
+        p = dict(
+            iterations=trial.suggest_int("iterations", 300, 1200),
+            learning_rate=trial.suggest_float("learning_rate", 1e-3, 0.3, log=True),
+            depth=trial.suggest_int("depth", 3, 10),
+            l2_leaf_reg=trial.suggest_float("l2_leaf_reg", 1e-4, 10.0, log=True),
+            random_seed=random_state, loss_function="RMSE", eval_metric="RMSE",
+            verbose=False,
+        )
+        m = CatBoostRegressor(**p)
+        m.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=30, verbose=False)
+        return float(np.mean((y_val - m.predict(X_val)) ** 2))
+
+    study = optuna.create_study(direction="minimize",
+                                sampler=optuna.samplers.TPESampler(seed=random_state))
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    log.info(f"CatBoost best params: {study.best_params}")
+
+    best_model = CatBoostRegressor(**{**study.best_params,
+                                      "random_seed": random_state,
+                                      "loss_function": "RMSE",
+                                      "eval_metric": "RMSE",
+                                      "verbose": False})
+    return train_catboost(best_model, X_train, y_train, X_val, y_val)
+
+
+
 # ── Training helpers ──────────────────────────────────────────────────────────
 
 def train_xgboost(
@@ -216,6 +267,23 @@ def train_lightgbm(
         ],
     )
     log.info("LightGBM training complete.")
+    return model
+
+
+def train_catboost(
+    model,
+    X_train: np.ndarray, y_train: np.ndarray,
+    X_val: np.ndarray,   y_val: np.ndarray,
+    early_stopping_rounds: int = 50,
+):
+    """Fit CatBoost with early stopping."""
+    model.fit(
+        X_train, y_train,
+        eval_set=[(X_val, y_val)],
+        early_stopping_rounds=early_stopping_rounds,
+        verbose=False,
+    )
+    log.info("CatBoost training complete.")
     return model
 
 

@@ -99,7 +99,12 @@ def add_cross_currency_features(
             grp[f"corr_vs_{base_currency}_{corr_window}d"] = 0.0
 
         if usd_index_series is not None:
-            grp["fx_index"] = usd_index_series.reindex(grp.index).fillna(method="ffill")
+            grp["fx_index"] = (
+                usd_index_series
+                .reindex(grp.index)
+                .ffill()
+                .bfill()
+            )
             # Relative strength: how this pair moves vs the index
             grp["rate_vs_index"] = grp["exchange_rate"] / (grp["fx_index"] + 1e-10)
         else:
