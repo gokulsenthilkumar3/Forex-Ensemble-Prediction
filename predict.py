@@ -159,7 +159,12 @@ def main() -> None:
     log.info(f"Inference input shape: {X.shape}")
 
     preds_scaled = model.predict(X).reshape(-1, 1)
-    preds = scaler_y.inverse_transform(preds_scaled).flatten()
+    import inspect
+    sig = inspect.signature(scaler_y.inverse_transform)
+    if "currencies" in sig.parameters:
+        preds = scaler_y.inverse_transform(preds_scaled, df_proc["currency_code"].values).flatten()
+    else:
+        preds = scaler_y.inverse_transform(preds_scaled).flatten()
 
     out_df = df_proc[["date", "exchange_rate"]].copy() if "exchange_rate" in df_proc.columns else df_proc[["date"]].copy()
     out_df["predicted_rate"] = preds

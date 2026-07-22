@@ -64,3 +64,55 @@ def load_scaler(output_dir: str, name: str):
     path = os.path.join(output_dir, f"{name}.pkl")
     log.info(f"Loading scaler '{name}' from {path}")
     return joblib.load(path)
+
+
+class PerCurrencyTargetScaler:
+    """Scales target values independently for each currency using MinMaxScaler."""
+    def __init__(self, feature_range=(0.05, 0.95)):
+        self.feature_range = feature_range
+        self.scalers = {}
+
+    def fit(self, y: np.ndarray, currencies: np.ndarray) -> PerCurrencyTargetScaler:
+        from sklearn.preprocessing import MinMaxScaler
+        y_flat = np.asarray(y).flatten()
+        currencies_flat = np.asarray(currencies).flatten()
+        df_temp = pd.DataFrame({"y": y_flat, "curr": currencies_flat})
+        for curr, grp in df_temp.groupby("curr"):
+            sc = MinMaxScaler(feature_range=self.feature_range)
+            sc.fit(grp["y"].values.reshape(-1, 1))
+            self.scalers[curr] = sc
+        return self
+
+    def transform(self, y: np.ndarray, currencies: np.ndarray) -> np.ndarray:
+        y_flat = np.asarray(y).flatten()
+        currencies_flat = np.asarray(currencies).flatten()
+        y_scaled = np.zeros_like(y_flat)
+        df_temp = pd.DataFrame({"y": y_flat, "curr": currencies_flat})
+        for curr, grp in df_temp.groupby("curr"):
+            if curr in self.scalers:
+                sc = self.scalers[curr]
+                y_scaled[grp.index] = sc.transform(grp["y"].values.reshape(-1, 1)).flatten()
+            else:
+                y_scaled[grp.index] = grp["y"].values
+        return y_scaled.reshape(-1, 1)
+
+    def fit_transform(self, y: np.ndarray, currencies: np.ndarray) -> np.ndarray:
+        self.fit(y, currencies)
+        return self.transform(y, currencies)
+
+    def inverse_transform(self, y: np.ndarray, currencies: np.ndarray | None = None) -> np.ndarray:
+        y_flat = np.asarray(y).flatten()
+        if currencies is None:
+            # Fallback to returning raw array if no currencies provided
+            return y_flat.reshape(-1, 1)
+        currencies_flat = np.asarray(currencies).flatten()
+        y_inv = np.zeros_like(y_flat)
+        df_temp = pd.DataFrame({"y": y_flat, "curr": currencies_flat})
+        for curr, grp in df_temp.groupby("curr"):
+            if curr in self.scalers:
+                sc = self.scalers[curr]
+                y_inv[grp.index] = sc.inverse_transform(grp["y"].values.reshape(-1, 1)).flatten()
+            else:
+                y_inv[grp.index] = grp["y"].values
+        return y_inv.reshape(-1, 1)
+

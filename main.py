@@ -40,11 +40,11 @@ from src.models.tree_models  import (
     build_xgboost_tuned, build_lightgbm_tuned, build_catboost_tuned,
     train_xgboost, train_lightgbm, train_catboost, save_model
 )
-from src.models.deep_learning import DL_BUILDERS, get_callbacks
+from src.models.deep_learning import DL_BUILDERS, get_callbacks, HAS_TF
 from src.models.ensemble import build_oof_meta_features, StackingEnsemble
 from src.evaluation.metrics  import compute_metrics
 from src.evaluation.visualize import plot_loss_curves, plot_metrics_heatmap, plot_actual_vs_predicted
-from src.utils.io            import make_sequences, save_results, save_scaler
+from src.utils.io            import make_sequences, save_results, save_scaler, PerCurrencyTargetScaler
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -161,34 +161,56 @@ def main() -> None:
     df = pd.concat(scaled_dfs, ignore_index=True).sort_values(["currency_code", "date"]).reset_index(drop=True)
     save_scaler(per_currency_scalers, args.output, "per_currency_scalers")
 
-    df = pd.get_dummies(df, columns=["currency_code"], drop_first=True)
-    bool_cols = df.select_dtypes("bool").columns
+    # Split train/test chronologically per currency
+    train_dfs = []
+    test_dfs = []
+    for code, grp in df.groupby("currency_code"):
+        grp = grp.sort_values("date")
+        split_idx = int(len(grp) * (1 - args.test_ratio))
+        train_dfs.append(grp.iloc[:split_idx])
+        test_dfs.append(grp.iloc[split_idx:])
+        
+    train_df_raw = pd.concat(train_dfs, ignore_index=True)
+    test_df_raw  = pd.concat(test_dfs, ignore_index=True)
+    
+    train_curr = train_df_raw["currency_code"].values
+    test_curr  = test_df_raw["currency_code"].values
+    
+    split_border = len(train_df_raw)
+    combined_df = pd.concat([train_df_raw, test_df_raw], ignore_index=True)
+    combined_df = pd.get_dummies(combined_df, columns=["currency_code"], drop_first=True)
+    bool_cols = combined_df.select_dtypes("bool").columns
     if len(bool_cols):
-        df[bool_cols] = df[bool_cols].astype(int)
+        combined_df[bool_cols] = combined_df[bool_cols].astype(int)
 
     # ── 6. Target Scaling ─────────────────────────────────────────────────────
     log.info("STEP 6: Target Scaling & Train/Test Split")
-    feature_cols_final = [c for c in df.columns if c not in ("date", "exchange_rate", "target")]
-    X_all = df[feature_cols_final].values.astype(np.float32)
-    y_all = df["target"].values.reshape(-1, 1).astype(np.float32)
-    scaler_y = MinMaxScaler()
-    y_scaled = scaler_y.fit_transform(y_all)
+    train_df = combined_df.iloc[:split_border].reset_index(drop=True)
+    test_df  = combined_df.iloc[split_border:].reset_index(drop=True)
+    
+    feature_cols_final = [c for c in combined_df.columns if c not in ("date", "exchange_rate", "target")]
+    X_train = train_df[feature_cols_final].values.astype(np.float32)
+    X_test  = test_df[feature_cols_final].values.astype(np.float32)
+    
+    y_train = train_df["target"].values.reshape(-1, 1).astype(np.float32)
+    y_test  = test_df["target"].values.reshape(-1, 1).astype(np.float32)
+    
+    scaler_y = PerCurrencyTargetScaler()
+    y_train_scaled = scaler_y.fit_transform(y_train, train_curr)
+    y_test_scaled  = scaler_y.transform(y_test, test_curr)
     save_scaler(scaler_y, args.output, "scaler_y")
-
-    split       = int(len(X_all) * (1 - args.test_ratio))
-    X_train, X_test = X_all[:split],    X_all[split:]
-    y_train, y_test = y_scaled[:split], y_scaled[split:]
-    X_tr_flat, y_tr_flat = X_train, y_train.ravel()
-    X_te_flat, y_te_flat = X_test,  y_test.ravel()
+    
+    X_tr_flat, y_tr_flat = X_train, y_train_scaled.ravel()
+    X_te_flat, y_te_flat = X_test,  y_test_scaled.ravel()
     log.info(f"Train: {X_train.shape}  |  Test: {X_test.shape}")
-
-    X_tr_seq, y_tr_seq = make_sequences(X_train, y_train, args.timesteps)
-    X_te_seq, y_te_seq = make_sequences(X_test,  y_test,  args.timesteps)
+    
+    X_tr_seq, y_tr_seq = make_sequences(X_train, y_train_scaled, args.timesteps)
+    X_te_seq, y_te_seq = make_sequences(X_test,  y_test_scaled,  args.timesteps)
     n_feat = X_tr_seq.shape[2]
     log.info(f"Seq train: {X_tr_seq.shape}  |  Seq test: {X_te_seq.shape}")
-
-    def inv(arr):
-        return scaler_y.inverse_transform(arr.reshape(-1, 1)).flatten()
+    
+    def inv(arr, currencies):
+        return scaler_y.inverse_transform(arr.reshape(-1, 1), currencies).flatten()
 
     # ── 7. Tree Models ──────────────────────────────────────────────────────
     log.info("STEP 7: Training Tree Models")
@@ -219,10 +241,11 @@ def main() -> None:
 
     # ── 9. Deep Learning Models ───────────────────────────────────────────────
     log.info("STEP 9: Training Deep Learning Models")
-    import tensorflow as tf
-    gpus = tf.config.list_physical_devices("GPU")
-    if gpus:
-        [tf.config.experimental.set_memory_growth(d, True) for d in gpus]
+    if HAS_TF:
+        import tensorflow as tf
+        gpus = tf.config.list_physical_devices("GPU")
+        if gpus:
+            [tf.config.experimental.set_memory_growth(d, True) for d in gpus]
 
     results, histories, preds, dl_preds = [], {}, {}, {}
     for name, builder_fn in DL_BUILDERS.items():
@@ -237,8 +260,8 @@ def main() -> None:
         )
         p_sc = model.predict(X_te_seq, batch_size=args.batch_size, verbose=0).flatten()
         dl_preds[name] = p_sc
-        y_pr = inv(p_sc)
-        y_tr = inv(y_te_seq.flatten())
+        y_pr = inv(p_sc, test_curr[-len(y_te_seq):])
+        y_tr = inv(y_te_seq.flatten(), test_curr[-len(y_te_seq):])
         m    = compute_metrics(y_tr, y_pr, name)
         results.append(m)
         histories[name] = hist
@@ -257,8 +280,8 @@ def main() -> None:
         
     for tname, tmodel in tree_models:
         p_sc   = tmodel.predict(X_te_algn).astype(np.float32)
-        y_pr   = inv(p_sc)
-        y_tr   = inv(y_te_algn)
+        y_pr   = inv(p_sc, test_curr[-n_seq:])
+        y_tr   = inv(y_te_algn, test_curr[-n_seq:])
         m      = compute_metrics(y_tr, y_pr, tname)
         results.append(m)
         preds[tname] = (y_pr, y_tr)
@@ -312,9 +335,9 @@ def main() -> None:
     meta_X_test = np.column_stack(test_preds)
     
     st_pred  = ensemble.predict(meta_X_test)
-    m_stack  = compute_metrics(inv(y_te_seq.flatten()), inv(st_pred), "Stacking Ensemble")
+    m_stack  = compute_metrics(inv(y_te_seq.flatten(), test_curr[-n_seq:]), inv(st_pred, test_curr[-n_seq:]), "Stacking Ensemble")
     results.append(m_stack)
-    preds["Stacking Ensemble"] = (inv(st_pred), inv(y_te_seq.flatten()))
+    preds["Stacking Ensemble"] = (inv(st_pred, test_curr[-n_seq:]), inv(y_te_seq.flatten(), test_curr[-n_seq:]))
     log.info(f"  Stacking: MAE={m_stack['MAE']:.4f}  R²={m_stack['R2']:.4f}  DA={m_stack['DA']:.1f}%")
 
     # ── 12. Results & Visualizations ─────────────────────────────────────────────
@@ -322,7 +345,8 @@ def main() -> None:
     results_df = pd.DataFrame(results)
     save_results(results, args.output)
     log.info("\n" + results_df.to_string(index=False))
-    plot_loss_curves(histories, args.output)
+    if histories:
+        plot_loss_curves(histories, args.output)
     plot_metrics_heatmap(results_df, args.output)
     plot_actual_vs_predicted(preds, args.output)
 

@@ -34,6 +34,7 @@ def train_trees_with_tracking(
     output_dir: str,
     xgb_params: dict | None = None,
     lgb_params: dict | None = None,
+    test_curr: np.ndarray | None = None,
 ) -> tuple:
     """
     Train XGBoost and LightGBM with full MLflow experiment tracking.
@@ -48,10 +49,11 @@ def train_trees_with_tracking(
     ----------
     X_train, y_train : Training features and scaled targets.
     X_test,  y_test  : Test features and scaled targets.
-    scaler_y         : Fitted MinMaxScaler for target inverse-transform.
+    scaler_y         : Target scaler.
     output_dir       : Root output directory.
     xgb_params       : Optional XGBoost hyperparameter overrides.
     lgb_params       : Optional LightGBM hyperparameter overrides.
+    test_curr        : Test set currencies for target inverse-transform.
 
     Returns
     -------
@@ -61,6 +63,10 @@ def train_trees_with_tracking(
     setup_mlflow()
 
     def inv(arr):
+        import inspect
+        sig = inspect.signature(scaler_y.inverse_transform)
+        if "currencies" in sig.parameters:
+            return scaler_y.inverse_transform(arr.reshape(-1, 1), test_curr).flatten()
         return scaler_y.inverse_transform(arr.reshape(-1, 1)).flatten()
 
     # ── XGBoost ──────────────────────────────────────────────────────────

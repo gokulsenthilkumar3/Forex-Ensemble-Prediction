@@ -277,6 +277,8 @@ def train_catboost(
     early_stopping_rounds: int = 50,
 ):
     """Fit CatBoost with early stopping."""
+    if model is None:
+        return None
     model.fit(
         X_train, y_train,
         eval_set=[(X_val, y_val)],

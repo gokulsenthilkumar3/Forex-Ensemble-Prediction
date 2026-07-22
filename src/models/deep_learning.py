@@ -15,16 +15,36 @@ Fixed bugs (see review comment on PR #6):
 from __future__ import annotations
 import os
 import logging
-import tensorflow as tf
-from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import (
-    Input, Dense, GRU, LSTM, Bidirectional,
-    MultiHeadAttention, LayerNormalization, Dropout,
-    GlobalAveragePooling1D, Conv1D,
-)
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.losses import Huber
-from tensorflow.keras.optimizers import AdamW
+import numpy as np
+HAS_TF = False
+try:
+    import tensorflow as tf
+    try:
+        from tensorflow.keras.models import Model, Sequential
+        from tensorflow.keras.layers import (
+            Input, Dense, GRU, LSTM, Bidirectional,
+            MultiHeadAttention, LayerNormalization, Dropout,
+            GlobalAveragePooling1D, Conv1D,
+        )
+        from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+        from tensorflow.keras.losses import Huber
+        from tensorflow.keras.optimizers import AdamW
+    except Exception:
+        import tf_keras as keras  # type: ignore
+        from tf_keras.models import Model, Sequential  # type: ignore
+        from tf_keras.layers import (  # type: ignore
+            Input, Dense, GRU, LSTM, Bidirectional,
+            MultiHeadAttention, LayerNormalization, Dropout,
+            GlobalAveragePooling1D, Conv1D,
+        )
+        from tf_keras.callbacks import EarlyStopping, ModelCheckpoint  # type: ignore
+        from tf_keras.losses import Huber  # type: ignore
+        from tf_keras.optimizers import AdamW  # type: ignore
+    HAS_TF = True
+    _BaseLayer = tf.keras.layers.Layer
+except Exception as e:
+    log.warning(f"Could not load native TensorFlow/Keras: {e}. DL models (GRU, LSTM, Transformer, etc.) will be disabled.")
+    _BaseLayer = object
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +85,7 @@ def get_callbacks(
 
 # ── Custom Layers ─────────────────────────────────────────────────────────────
 
-class AttentionPool(tf.keras.layers.Layer):
+class AttentionPool(_BaseLayer):
     """Soft attention pooling over the sequence (time) dimension."""
 
     def __init__(self, units: int, **kwargs):
@@ -79,7 +99,7 @@ class AttentionPool(tf.keras.layers.Layer):
         return tf.reduce_sum(x * weights, axis=1)    # (B, units)
 
 
-class PositionalEncoding(tf.keras.layers.Layer):
+class PositionalEncoding(_BaseLayer):
     """
     Fixed sinusoidal positional encoding (Vaswani et al. 2017).
 
@@ -117,7 +137,7 @@ class PositionalEncoding(tf.keras.layers.Layer):
         return x + tf.cast(pe[tf.newaxis, :, :], x.dtype)                      # (B,T,D)
 
 
-class TransformerBlock(tf.keras.layers.Layer):
+class TransformerBlock(_BaseLayer):
     """Multi-head self-attention block with Pre-LN (more stable training)."""
 
     def __init__(self, num_heads: int, d_model: int, ff_dim: int,
@@ -125,7 +145,7 @@ class TransformerBlock(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.att   = MultiHeadAttention(num_heads=num_heads,
                                         key_dim=d_model // num_heads)
-        self.ffn   = Sequential([Dense(ff_dim, "relu"), Dense(d_model)])
+        self.ffn   = Sequential([Dense(ff_dim, "gelu"), Dense(d_model)])
         self.ln1   = LayerNormalization(epsilon=1e-6)
         self.ln2   = LayerNormalization(epsilon=1e-6)
         self.drop1 = Dropout(dropout)
@@ -138,7 +158,7 @@ class TransformerBlock(tf.keras.layers.Layer):
         return x + self.drop2(self.ffn(x2), training=training)
 
 
-class GatedTFTBlock(tf.keras.layers.Layer):
+class GatedTFTBlock(_BaseLayer):
     """Gated Temporal Fusion Transformer block with per-step gating."""
 
     def __init__(self, num_heads: int, d_model: int, ff_dim: int,
@@ -147,7 +167,7 @@ class GatedTFTBlock(tf.keras.layers.Layer):
         self.att   = MultiHeadAttention(num_heads=num_heads,
                                         key_dim=d_model // num_heads)
         self.gate  = Dense(d_model, activation="sigmoid")
-        self.ffn   = Sequential([Dense(ff_dim, "relu"), Dense(d_model)])
+        self.ffn   = Sequential([Dense(ff_dim, "gelu"), Dense(d_model)])
         self.ln1   = LayerNormalization(epsilon=1e-6)
         self.ln2   = LayerNormalization(epsilon=1e-6)
         self.drop1 = Dropout(dropout)
@@ -161,7 +181,7 @@ class GatedTFTBlock(tf.keras.layers.Layer):
         return x + self.drop2(self.ffn(x2), training=training)
 
 
-class TCNBlock(tf.keras.layers.Layer):
+class TCNBlock(_BaseLayer):
     """
     Temporal Convolutional Network residual block (Bai et al. 2018).
     Uses dilated causal convolutions + residual connection.
@@ -236,32 +256,52 @@ def build_bilstm_attention(timesteps: int, n_features: int) -> Model:
     return m
 
 
-def build_transformer(timesteps: int, n_features: int) -> Model:
-    d_model = min(n_features, 64)
-    n_heads = max(1, d_model // 16)
+def build_transformer(
+    timesteps: int, n_features: int,
+    num_blocks: int = 2,
+    num_heads: int = 4,
+    ff_dim_multiplier: int = 2,
+) -> Model:
+    base_d_model = min(n_features, 64)
+    d_model = max(num_heads, (base_d_model // num_heads) * num_heads)
+    
     inp = Input(shape=(timesteps, n_features))
     x   = Dense(d_model)(inp)
     x   = PositionalEncoding()(x)
-    x   = TransformerBlock(n_heads, d_model, d_model * 2)(x)
-    x   = TransformerBlock(n_heads, d_model, d_model * 2)(x)
+    x   = Dropout(0.1)(x)
+    
+    for _ in range(num_blocks):
+        x = TransformerBlock(num_heads, d_model, d_model * ff_dim_multiplier)(x)
+        
+    x   = LayerNormalization(epsilon=1e-6)(x)
     x   = GlobalAveragePooling1D()(x)
-    x   = Dense(64, activation="relu")(x)
+    x   = Dense(64, activation="gelu")(x)
     x   = Dropout(0.2)(x)
     m   = Model(inp, Dense(1)(x), name="Transformer")
     m.compile(optimizer=_OPT(), loss=Huber(), metrics=["mae"])
     return m
 
 
-def build_tft(timesteps: int, n_features: int) -> Model:
-    d_model = min(n_features, 64)
-    n_heads = max(1, d_model // 16)
+def build_tft(
+    timesteps: int, n_features: int,
+    num_blocks: int = 2,
+    num_heads: int = 4,
+    ff_dim_multiplier: int = 2,
+) -> Model:
+    base_d_model = min(n_features, 64)
+    d_model = max(num_heads, (base_d_model // num_heads) * num_heads)
+    
     inp = Input(shape=(timesteps, n_features))
     x   = Dense(d_model)(inp)
     x   = PositionalEncoding()(x)
-    x   = GatedTFTBlock(n_heads, d_model, d_model * 2)(x)
-    x   = GatedTFTBlock(n_heads, d_model, d_model * 2)(x)
+    x   = Dropout(0.1)(x)
+    
+    for _ in range(num_blocks):
+        x = GatedTFTBlock(num_heads, d_model, d_model * ff_dim_multiplier)(x)
+        
+    x   = LayerNormalization(epsilon=1e-6)(x)
     x   = GlobalAveragePooling1D()(x)
-    x   = Dense(64, activation="relu")(x)
+    x   = Dense(64, activation="gelu")(x)
     x   = Dropout(0.2)(x)
     m   = Model(inp, Dense(1)(x), name="TFT")
     m.compile(optimizer=_OPT(), loss=Huber(), metrics=["mae"])
@@ -316,7 +356,6 @@ def mc_predict(
     mean_pred : np.ndarray (N,)
     std_pred  : np.ndarray (N,) — uncertainty estimate
     """
-    import numpy as np
 
     def _single_pass(m, X_all, bs):
         """Run one stochastic forward pass over X in batches."""
@@ -333,13 +372,14 @@ def mc_predict(
     return preds.mean(axis=0), preds.std(axis=0)
 
 
-# ── Builder Registry ──────────────────────────────────────────────────────────
-
-DL_BUILDERS = {
-    "GRU":         build_gru,
-    "LSTM":        build_lstm,
-    "BiLSTM-Attn": build_bilstm_attention,
-    "Transformer": build_transformer,
-    "TFT":         build_tft,
-    "TCN":         build_tcn,
-}
+if HAS_TF:
+    DL_BUILDERS = {
+        "GRU":         build_gru,
+        "LSTM":        build_lstm,
+        "BiLSTM-Attn": build_bilstm_attention,
+        "Transformer": build_transformer,
+        "TFT":         build_tft,
+        "TCN":         build_tcn,
+    }
+else:
+    DL_BUILDERS = {}

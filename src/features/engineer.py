@@ -127,6 +127,34 @@ def add_features(g: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             shifted = p.shift(lag)
             g[f"lag_{lag}"] = shifted.ffill() if fill == "ffill" else shifted.bfill()
 
+    # ── Momentum Slopes ──────────────────────────────────────────────────────
+    if cfg.get("momentum_slopes", {}).get("enabled", False):
+        rsi_p = cfg["momentum_slopes"].get("rsi_period", 3)
+        bb_p  = cfg["momentum_slopes"].get("bb_period", 3)
+        macd_p = cfg["momentum_slopes"].get("macd_period", 3)
+        
+        if "RSI" in g.columns:
+            g["RSI_slope"] = g["RSI"].diff(rsi_p).fillna(0)
+        if "BB_width" in g.columns:
+            g["BB_width_slope"] = g["BB_width"].diff(bb_p).fillna(0)
+        if "MACD_hist" in g.columns:
+            g["MACD_slope"] = g["MACD_hist"].diff(macd_p).fillna(0)
+
+    # ── Crossovers & Ratios ──────────────────────────────────────────────────
+    if cfg.get("crossovers_ratios", {}).get("enabled", False):
+        fast = cfg["crossovers_ratios"].get("sma_fast", 5)
+        slow = cfg["crossovers_ratios"].get("sma_slow", 20)
+        
+        sma_fast_col = f"SMA_{fast}"
+        sma_slow_col = f"SMA_{slow}"
+        if sma_fast_col not in g.columns:
+            g[sma_fast_col] = p.rolling(fast, min_periods=1).mean()
+        if sma_slow_col not in g.columns:
+            g[sma_slow_col] = p.rolling(slow, min_periods=1).mean()
+            
+        g["SMA_ratio_fast_slow"] = (g[sma_fast_col] / (g[sma_slow_col] + 1e-10)).fillna(1.0)
+        g["price_to_SMA_slow"]    = (p / (g[sma_slow_col] + 1e-10)).fillna(1.0)
+
     # ── Calendar Features ────────────────────────────────────────────────────
     if cfg["calendar"]["enabled"]:
         feats = cfg["calendar"]["features"]
