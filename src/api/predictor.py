@@ -252,7 +252,12 @@ class ForexPredictor:
 
         model        = self._models[model_name]
         preds_scaled = np.asarray(model.predict(X)).reshape(-1, 1)
-        preds        = self.scaler_y.inverse_transform(preds_scaled).flatten()
+        import inspect
+        sig = inspect.signature(self.scaler_y.inverse_transform)
+        if "currencies" in sig.parameters:
+            preds = self.scaler_y.inverse_transform(preds_scaled, df_proc["currency_code"].values).flatten()
+        else:
+            preds = self.scaler_y.inverse_transform(preds_scaled).flatten()
 
         uncertainties = None
         if return_uncertainty:

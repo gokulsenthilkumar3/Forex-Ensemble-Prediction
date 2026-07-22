@@ -1,0 +1,37 @@
+{
+  "forex_pairs": [
+    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X",
+    "USDCHF=X", "NZDUSD=X", "USDINR=X", "USDCNY=X", "USDSGD=X",
+    "USDHKD=X", "USDKRW=X", "USDBRL=X", "USDMXN=X", "USDTRY=X",
+    "USDZAR=X", "USDNOK=X", "USDSEK=X", "USDDKK=X", "USDPLN=X",
+    "USDCZK=X", "USDHUF=X", "EURJPY=X", "EURGBP=X", "GBPJPY=X",
+    "AUDJPY=X", "CADJPY=X", "CHFJPY=X", "EURAUD=X", "EURCAD=X"
+  ],
+  "commodities": [
+    "GC=F", "SI=F", "PL=F", "HG=F", "CL=F", "BZ=F", "NG=F",
+    "ZC=F", "ZS=F", "ZW=F", "KC=F", "SB=F", "CC=F", "CT=F",
+    "LE=F", "HE=F", "PA=F", "RB=F", "HO=F"
+  ],
+  "macro_tickers": [
+    "^VIX", "DX-Y.NYB", "^TNX", "^IRX", "^GSPC", "^DJI", "^IXIC", "^FTSE", "^N225"
+  ],
+  "ticker_labels": {
+    "EURUSD=X": "EUR_USD", "GBPUSD=X": "GBP_USD", "USDJPY=X": "USD_JPY", "AUDUSD=X": "AUD_USD",
+    "USDCAD=X": "USD_CAD", "USDCHF=X": "USD_CHF", "NZDUSD=X": "NZD_USD", "USDINR=X": "USD_INR",
+    "USDCNY=X": "USD_CNY", "USDSGD=X": "USD_SGD", "USDHKD=X": "USD_HKD", "USDKRW=X": "USD_KRW",
+    "USDBRL=X": "USD_BRL", "USDMXN=X": "USD_MXN", "USDTRY=X": "USD_TRY", "USDZAR=X": "USD_ZAR",
+    "USDNOK=X": "USD_NOK", "USDSEK=X": "USD_SEK", "USDDKK=X": "USD_DKK", "USDPLN=X": "USD_PLN",
+    "USDCZK=X": "USD_CZK", "USDHUF=X": "USD_HUF", "EURJPY=X": "EUR_JPY", "EURGBP=X": "EUR_GBP",
+    "GBPJPY=X": "GBP_JPY", "AUDJPY=X": "AUD_JPY", "CADJPY=X": "CAD_JPY", "CHFJPY=X": "CHF_JPY",
+    "EURAUD=X": "EUR_AUD", "EURCAD=X": "EUR_CAD",
+    "GC=F": "Gold", "SI=F": "Silver", "PL=F": "Platinum", "HG=F": "Copper",
+    "CL=F": "WTI_Crude", "BZ=F": "Brent_Crude", "NG=F": "Natural_Gas",
+    "ZC=F": "Corn", "ZS=F": "Soybeans", "ZW=F": "Wheat",
+    "KC=F": "Coffee", "SB=F": "Sugar", "CC=F": "Cocoa", "CT=F": "Cotton",
+    "LE=F": "Live_Cattle", "HE=F": "Lean_Hogs", "PA=F": "Palladium",
+    "RB=F": "RBOB_Gasoline", "HO=F": "Heating_Oil",
+    "^VIX": "VIX", "^TNX": "US10Y", "^IRX": "US3M",
+    "DX-Y.NYB": "DXY", "^GSPC": "SP500", "^DJI": "DowJones",
+    "^IXIC": "NASDAQ", "^FTSE": "FTSE100", "^N225": "Nikkei225"
+  }
+}

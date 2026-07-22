@@ -50,6 +50,17 @@ calendar:
   enabled: true
   features: [day_of_week, month, quarter, is_month_end]
 
+momentum_slopes:
+  enabled: true
+  rsi_period: 3
+  bb_period: 3
+  macd_period: 3
+
+crossovers_ratios:
+  enabled: true
+  sma_fast: 5
+  sma_slow: 20
+
 cross_currency:
   enabled: true
   base_currency: "USD"        # reference pair for correlation

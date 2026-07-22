@@ -53,10 +53,14 @@ def get_predictions(model_name, _df_raw, _feat_cfg):
     X, feature_cols, df_proc = preprocess(_df_raw, _feat_cfg, per_currency_scalers, model=model)
     
     preds_scaled = model.predict(X).reshape(-1, 1)
-    preds = scaler_y.inverse_transform(preds_scaled).flatten()
+    import inspect
+    sig = inspect.signature(scaler_y.inverse_transform)
+    if "currencies" in sig.parameters:
+        preds = scaler_y.inverse_transform(preds_scaled, df_proc["currency_code"].values).flatten()
+    else:
+        preds = scaler_y.inverse_transform(preds_scaled).flatten()
     
     out_df = df_proc[["date", "currency_code", "exchange_rate"]].copy()
-    out_df["predicted_rate"] = preds
     
     # Adjust dates based on target configuration
     target_mode = _feat_cfg.get("target", {}).get("mode", "raw_rate")
@@ -64,10 +68,42 @@ def get_predictions(model_name, _df_raw, _feat_cfg):
     
     out_df["date"] = pd.to_datetime(out_df["date"])
     
+    # Reconstruct actual rates if predictions are returns/percentages
+    if target_mode in ["log_return", "pct_change"]:
+        # Get the previous actual rate (Rate_{t-1})
+        prev_rate = out_df.groupby("currency_code")["exchange_rate"].shift(1)
+        if target_mode == "log_return":
+            out_df["predicted_rate"] = prev_rate * np.exp(preds)
+        else:
+            out_df["predicted_rate"] = prev_rate * (1 + preds)
+    else:
+        out_df["predicted_rate"] = preds
+        
     if target_mode == "n_step_ahead":
-        # Shift the prediction dates into the future
-        # (Assuming trading days, but we use calendar days for simplicity here)
-        out_df["prediction_date"] = out_df["date"] + pd.Timedelta(days=n_ahead)
+        # Shift the prediction date to the date of row t + n_ahead
+        out_df["prediction_date"] = out_df.groupby("currency_code")["date"].shift(-n_ahead)
+        
+        # Extrapolate NaT dates at the end using calendar days
+        is_nat = out_df["prediction_date"].isna()
+        if is_nat.any():
+            def fill_future_dates(group):
+                group = group.sort_values("date")
+                last_valid_idx = group["prediction_date"].last_valid_index()
+                if last_valid_idx is not None:
+                    last_valid_date = group.loc[last_valid_idx, "prediction_date"]
+                    null_mask = group["prediction_date"].isna()
+                    null_count = null_mask.sum()
+                    future_dates = [last_valid_date + pd.Timedelta(days=i) for i in range(1, null_count + 1)]
+                    group.loc[null_mask, "prediction_date"] = future_dates
+                else:
+                    last_date = group["date"].max()
+                    null_mask = group["prediction_date"].isna()
+                    null_count = null_mask.sum()
+                    future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, null_count + 1)]
+                    group.loc[null_mask, "prediction_date"] = future_dates
+                return group
+            
+            out_df = out_df.groupby("currency_code", group_keys=False).apply(fill_future_dates)
     else:
         out_df["prediction_date"] = out_df["date"]
         
