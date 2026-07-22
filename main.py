@@ -361,8 +361,8 @@ def main() -> None:
     for k in ["MSE", "MAE", "RMSE", "MAPE", "R2", "DA"]:
         log.info(f"  {k:5s}: {best[k]:.6f}")
     log.info("=" * 70)
-    log.info(f"Outputs → {os.path.abspath(args.output)}")
-    log.info("Forex Prediction v3.1 complete ✓")
+    log.info(f"Outputs -> {os.path.abspath(args.output)}")
+    log.info("Forex Prediction v3.1 complete.")
 
 
 if __name__ == "__main__":
