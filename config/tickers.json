@@ -1,37 +1,39 @@
 {
-  "forex_pairs": [
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X",
-    "USDCHF=X", "NZDUSD=X", "USDINR=X", "USDCNY=X", "USDSGD=X",
-    "USDHKD=X", "USDKRW=X", "USDBRL=X", "USDMXN=X", "USDTRY=X",
-    "USDZAR=X", "USDNOK=X", "USDSEK=X", "USDDKK=X", "USDPLN=X",
-    "USDCZK=X", "USDHUF=X", "EURJPY=X", "EURGBP=X", "GBPJPY=X",
-    "AUDJPY=X", "CADJPY=X", "CHFJPY=X", "EURAUD=X", "EURCAD=X"
+  "pairs": [
+    "EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD",
+    "USD_CHF", "NZD_USD", "USD_INR", "USD_CNY", "USD_SGD",
+    "USD_HKD", "USD_ZAR", "USD_NOK", "USD_SEK", "USD_DKK", 
+    "USD_PLN", "USD_CZK", "USD_HUF", "EUR_JPY", "EUR_GBP",
+    "GBP_JPY", "AUD_JPY", "CAD_JPY", "CHF_JPY", "EUR_AUD", 
+    "EUR_CAD"
   ],
   "commodities": [
-    "GC=F", "SI=F", "PL=F", "HG=F", "CL=F", "BZ=F", "NG=F",
-    "ZC=F", "ZS=F", "ZW=F", "KC=F", "SB=F", "CC=F", "CT=F",
-    "LE=F", "HE=F", "PA=F", "RB=F", "HO=F"
+    "XAU_USD", "XAG_USD", "XPT_USD", "XPD_USD", "XCU_USD", 
+    "WTICO_USD", "BCO_USD", "NATGAS_USD",
+    "CORN_USD", "SOYBN_USD", "WHEAT_USD", "SUGAR_USD"
   ],
   "macro_tickers": [
-    "^VIX", "DX-Y.NYB", "^TNX", "^IRX", "^GSPC", "^DJI", "^IXIC", "^FTSE", "^N225"
+    "SPX500_USD", "US30_USD", "NAS100_USD", "UK100_GBP", "JP225_USD",
+    "USB10Y_USD", "USB05Y_USD", "USB02Y_USD"
   ],
   "ticker_labels": {
-    "EURUSD=X": "EUR_USD", "GBPUSD=X": "GBP_USD", "USDJPY=X": "USD_JPY", "AUDUSD=X": "AUD_USD",
-    "USDCAD=X": "USD_CAD", "USDCHF=X": "USD_CHF", "NZDUSD=X": "NZD_USD", "USDINR=X": "USD_INR",
-    "USDCNY=X": "USD_CNY", "USDSGD=X": "USD_SGD", "USDHKD=X": "USD_HKD", "USDKRW=X": "USD_KRW",
-    "USDBRL=X": "USD_BRL", "USDMXN=X": "USD_MXN", "USDTRY=X": "USD_TRY", "USDZAR=X": "USD_ZAR",
-    "USDNOK=X": "USD_NOK", "USDSEK=X": "USD_SEK", "USDDKK=X": "USD_DKK", "USDPLN=X": "USD_PLN",
-    "USDCZK=X": "USD_CZK", "USDHUF=X": "USD_HUF", "EURJPY=X": "EUR_JPY", "EURGBP=X": "EUR_GBP",
-    "GBPJPY=X": "GBP_JPY", "AUDJPY=X": "AUD_JPY", "CADJPY=X": "CAD_JPY", "CHFJPY=X": "CHF_JPY",
-    "EURAUD=X": "EUR_AUD", "EURCAD=X": "EUR_CAD",
-    "GC=F": "Gold", "SI=F": "Silver", "PL=F": "Platinum", "HG=F": "Copper",
-    "CL=F": "WTI_Crude", "BZ=F": "Brent_Crude", "NG=F": "Natural_Gas",
-    "ZC=F": "Corn", "ZS=F": "Soybeans", "ZW=F": "Wheat",
-    "KC=F": "Coffee", "SB=F": "Sugar", "CC=F": "Cocoa", "CT=F": "Cotton",
-    "LE=F": "Live_Cattle", "HE=F": "Lean_Hogs", "PA=F": "Palladium",
-    "RB=F": "RBOB_Gasoline", "HO=F": "Heating_Oil",
-    "^VIX": "VIX", "^TNX": "US10Y", "^IRX": "US3M",
-    "DX-Y.NYB": "DXY", "^GSPC": "SP500", "^DJI": "DowJones",
-    "^IXIC": "NASDAQ", "^FTSE": "FTSE100", "^N225": "Nikkei225"
-  }
+    "EUR_USD": "EUR_USD", "GBP_USD": "GBP_USD", "USD_JPY": "USD_JPY", "AUD_USD": "AUD_USD",
+    "USD_CAD": "USD_CAD", "USD_CHF": "USD_CHF", "NZD_USD": "NZD_USD", "USD_INR": "USD_INR",
+    "USD_CNY": "USD_CNY", "USD_SGD": "USD_SGD", "USD_HKD": "USD_HKD", "USD_ZAR": "USD_ZAR",
+    "USD_NOK": "USD_NOK", "USD_SEK": "USD_SEK", "USD_DKK": "USD_DKK", "USD_PLN": "USD_PLN",
+    "USD_CZK": "USD_CZK", "USD_HUF": "USD_HUF", "EUR_JPY": "EUR_JPY", "EUR_GBP": "EUR_GBP",
+    "GBP_JPY": "GBP_JPY", "AUD_JPY": "AUD_JPY", "CAD_JPY": "CAD_JPY", "CHF_JPY": "CHF_JPY",
+    "EUR_AUD": "EUR_AUD", "EUR_CAD": "EUR_CAD",
+
+    "XAU_USD": "Gold", "XAG_USD": "Silver", "XPT_USD": "Platinum", "XPD_USD": "Palladium", "XCU_USD": "Copper",
+    "WTICO_USD": "WTI_Crude", "BCO_USD": "Brent_Crude", "NATGAS_USD": "Natural_Gas",
+    "CORN_USD": "Corn", "SOYBN_USD": "Soybeans", "WHEAT_USD": "Wheat", "SUGAR_USD": "Sugar",
+
+    "SPX500_USD": "SP500", "US30_USD": "DowJones", "NAS100_USD": "NASDAQ",
+    "UK100_GBP": "FTSE100", "JP225_USD": "Nikkei225",
+    "USB10Y_USD": "US10Y", "USB05Y_USD": "US5Y", "USB02Y_USD": "US2Y"
+  },
+  "interval": "H1",
+  "history_days": 30,
+  "output_format": "df"
 }

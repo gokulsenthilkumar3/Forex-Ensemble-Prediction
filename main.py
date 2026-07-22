@@ -71,7 +71,7 @@ def parse_args() -> argparse.Namespace:
                    help="Early stopping patience (epochs).")
     p.add_argument("--seed",       type=int, default=42,
                    help="Random seed for reproducibility.")
-    p.add_argument("--tune",       action="store_true",
+    p.add_argument("--tune",       action="store_true", default=True,
                    help="Use Optuna to tune tree models.")
     p.add_argument("--fetch-live", action="store_true",
                    help="Fetch 30+ years of live API Forex & Commodity data from Yahoo Finance before running pipeline.")
@@ -325,7 +325,7 @@ def main() -> None:
         seq_model_names=list(DL_BUILDERS.keys())
     )
     
-    ensemble = StackingEnsemble(meta_learner="weighted")
+    ensemble = StackingEnsemble(meta_learner="neural")
     ensemble.fit(oof_preds, y_tr_flat, val_maes=val_maes)
     save_model(ensemble, os.path.join(args.output, "stacking_meta.pkl"))
     
