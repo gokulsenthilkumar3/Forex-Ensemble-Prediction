@@ -209,7 +209,6 @@ def main() -> None:
     X_tr_flat, y_tr_flat = X_train, y_train_scaled.ravel()
     X_te_flat, y_te_flat = X_test,  y_test_scaled.ravel()
     log.info(f"Train: {X_train.shape}  |  Test: {X_test.shape}")
-
     X_tr_seq, y_tr_seq = make_sequences(X_train, y_train_scaled, args.timesteps)
     X_te_seq, y_te_seq = make_sequences(X_test,  y_test_scaled,  args.timesteps)
     n_feat = X_tr_seq.shape[2]
