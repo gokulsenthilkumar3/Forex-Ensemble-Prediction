@@ -399,3 +399,62 @@ class StackingEnsemble:
 
         # Ridge / weighted: direct joblib pickle
         return data
+
+# ── 5. Hybrid LLM-ML Ensemble ─────────────────────────────────────────────────
+
+class ForexHybridEnsemble:
+    """
+    Wraps the StackingEnsemble (Tier 1 & 3) and injects the LLMRiskModifier (Tier 2).
+    Provides the final end-to-end inference logic for Forex prediction.
+    """
+    def __init__(self, stacking_ensemble: StackingEnsemble):
+        self.ml_ensemble = stacking_ensemble
+        
+        try:
+            from src.models.llm_risk_modifier import LLMRiskModifier
+            self.llm_modifier = LLMRiskModifier()
+        except ImportError:
+            log.warning("LLMRiskModifier not found. Running purely quantitative ensemble.")
+            self.llm_modifier = None
+
+    def predict_with_risk(self, meta_X: np.ndarray, news_items: list = None) -> list:
+        """
+        Runs the ML ensemble and then passes the prediction through the LLM.
+        Returns a list of final trading decisions.
+        """
+        news_items = news_items or []
+        
+        # 1. Get raw quantitative predictions
+        ml_preds = self.ml_ensemble.predict(meta_X)
+        
+        final_decisions = []
+        for pred in ml_preds:
+            # Assuming pred is a probability of UP movement
+            signal = "BUY" if pred > 0.5 else "SELL"
+            
+            if self.llm_modifier:
+                risk_assessment = self.llm_modifier.assess_risk(
+                    ml_signal=signal,
+                    ml_probability=float(pred),
+                    news_items=news_items
+                )
+                
+                decision = {
+                    "ml_signal": signal,
+                    "ml_probability": float(pred),
+                    "risk_level": risk_assessment.get("risk_level", "Medium"),
+                    "suggested_action": risk_assessment.get("suggested_action", "Confirm Signal"),
+                    "llm_reasoning": risk_assessment.get("reasoning", "")
+                }
+            else:
+                decision = {
+                    "ml_signal": signal,
+                    "ml_probability": float(pred),
+                    "risk_level": "Unknown",
+                    "suggested_action": "Confirm Signal",
+                    "llm_reasoning": "LLM Modifier unavailable."
+                }
+            final_decisions.append(decision)
+            
+        return final_decisions
+
