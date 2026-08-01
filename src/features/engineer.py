@@ -186,3 +186,37 @@ def build_per_currency_scalers(df: pd.DataFrame, feature_cols: list) -> dict:
         scalers[code] = sc
         log.debug(f"Fitted scaler for {code}")
     return scalers
+
+def create_sequences(X, y=None, seq_length=60):
+    """
+    Convert a 2D feature matrix into 3D sequences for deep learning models
+    like CNN-LSTM-Attention.
+    
+    Parameters
+    ----------
+    X : np.ndarray or pd.DataFrame of shape (num_samples, num_features)
+    y : np.ndarray or pd.Series of shape (num_samples,) [optional]
+    seq_length : int, number of historical steps to include in each sequence
+    
+    Returns
+    -------
+    X_seq : np.ndarray of shape (num_samples - seq_length + 1, seq_length, num_features)
+    y_seq : np.ndarray of shape (num_samples - seq_length + 1,) [if y is provided]
+    """
+    if isinstance(X, pd.DataFrame):
+        X = X.values
+    if y is not None and isinstance(y, (pd.Series, pd.DataFrame)):
+        y = y.values
+
+    X_seq = []
+    y_seq = []
+    
+    for i in range(len(X) - seq_length + 1):
+        X_seq.append(X[i:(i + seq_length)])
+        if y is not None:
+            # We predict the target at the end of the sequence
+            y_seq.append(y[i + seq_length - 1])
+            
+    if y is not None:
+        return np.array(X_seq), np.array(y_seq)
+    return np.array(X_seq)

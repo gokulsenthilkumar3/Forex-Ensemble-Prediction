@@ -404,11 +404,13 @@ class StackingEnsemble:
 
 class ForexHybridEnsemble:
     """
-    Wraps the StackingEnsemble (Tier 1 & 3) and injects the LLMRiskModifier (Tier 2).
+    Wraps a quantitative ML model (like StackingEnsemble or CNNLSTMAttention)
+    and injects the LLMRiskModifier.
     Provides the final end-to-end inference logic for Forex prediction.
     """
-    def __init__(self, stacking_ensemble: StackingEnsemble):
-        self.ml_ensemble = stacking_ensemble
+    def __init__(self, quantitative_model):
+        # quantitative_model can be a StackingEnsemble, CNNLSTMAttention, etc.
+        self.ml_ensemble = quantitative_model
         
         try:
             from src.models.llm_risk_modifier import LLMRiskModifier
@@ -417,15 +419,23 @@ class ForexHybridEnsemble:
             log.warning("LLMRiskModifier not found. Running purely quantitative ensemble.")
             self.llm_modifier = None
 
-    def predict_with_risk(self, meta_X: np.ndarray, news_items: list = None) -> list:
+    def predict_with_risk(self, feature_data: np.ndarray, news_items: list = None) -> list:
         """
-        Runs the ML ensemble and then passes the prediction through the LLM.
+        Runs the ML model and then passes the prediction through the LLM.
         Returns a list of final trading decisions.
         """
         news_items = news_items or []
         
         # 1. Get raw quantitative predictions
-        ml_preds = self.ml_ensemble.predict(meta_X)
+        # Handle the case where predict returns a tuple (predictions, probabilities)
+        ml_preds = self.ml_ensemble.predict(feature_data)
+        if isinstance(ml_preds, tuple):
+            _, ml_preds = ml_preds
+        elif len(np.asarray(ml_preds).shape) > 1 and np.asarray(ml_preds).shape[1] > 1:
+            # If it's a binary array, just grab the positive class prob
+            ml_preds = np.asarray(ml_preds)[:, 1]
+            
+        ml_preds = np.asarray(ml_preds).flatten()
         
         final_decisions = []
         for pred in ml_preds:
